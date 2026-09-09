@@ -33,7 +33,10 @@ The application owns its response headers, cookies, CSP, caching, redirects, and
 body limits. The relay's carrier body deadline applies only after an authentic
 secret is recognized. Caddy and the relay listener retain their general connection
 and header limits. Caddy sends all paths through the relay; do not route a separate
-set of public paths around it.
+set of public paths around it. The one deliberate exception is a base path
+deployment, where the front proxy routes only the relay's prefix and the site keeps
+everything else; see [BASE_PATH.md](BASE_PATH.md) for that layout and its
+trade-offs.
 
 Authentic capabilities and signed tokens in request metadata are intercepted even
 when expired, malformed, or misplaced. Only the canonical bridge GET or a valid

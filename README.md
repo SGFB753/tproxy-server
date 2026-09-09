@@ -399,6 +399,14 @@ Keep the bridge response headers produced by the Go relay intact; `PROTOCOL.md`
 lists the complete execution policy and explains which restrictions clients must
 also enforce independently.
 
+## Running alongside an existing website
+
+The layout above gives the relay a hostname of its own and routes every path to
+it. To put a relay on a domain that already serves a real site, or simply to move
+the carrier off well-known root paths, configure a base path and route only that
+prefix to the relay. [BASE_PATH.md](BASE_PATH.md) covers the two deployment modes,
+the nginx and Caddy front-proxy configuration, slug generation, and rollout.
+
 ## Multiple secrets on one hostname
 
 Add profiles to `/etc/tproxy-server/profiles.json`. Every profile has a unique name,

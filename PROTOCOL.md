@@ -38,6 +38,13 @@ locally with an uncacheable 404, without exposing it to the public application.
 `tdesktop-web-proxy-bridge-v1` is a frozen v1 domain-separation label. Its name is
 retained for compatibility and does not restrict the protocol to Telegram Desktop.
 
+A relay may also serve its whole surface under a base path, so that `GET /` above
+becomes `GET /<base-path>/` and every `/api/v1/…` endpoint moves under the same
+prefix. That variant derives its capability from a `tdesktop-web-proxy-bridge-v2`
+context binding both host and path, leaving the root derivation byte-identical.
+Telegram Desktop implements it; this server does not yet. See
+[BASE_PATH.md](BASE_PATH.md).
+
 ## Client-to-bridge boundary
 
 The bridge supports two ways to connect a Telegram app to the same carrier logic.
