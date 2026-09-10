@@ -307,15 +307,21 @@ client derives it in memory.
 A WEB-capable Telegram app accepts exactly two user-visible values:
 
 ```text
-Address: proxy.example.com
-Secret:  000102030405060708090a0b0c0d0e0f
+Proxy server: proxy.example.com
+Proxy secret: 000102030405060708090a0b0c0d0e0f
 ```
 
-The address is the hostname, plus the base path when one is configured, as in
+The server is the hostname, plus the base path when one is configured, as in
 `proxy.example.com/phcf2vfe7zgbrslg`. It contains no `https://`, port, query, or
 fragment. HTTPS and port 443 are fixed by the WEB proxy type. Internationalized
-domains are stored as lowercase ASCII IDNA A-labels. The secret is the same client-facing MTProxy
-secret configured in the corresponding server profile.
+domains are stored as lowercase ASCII IDNA A-labels.
+
+The proxy secret above is the plain hex of the client-facing MTProxy secret in the
+corresponding server profile. Typed by hand it keeps that form even under a base
+path, because the user supplies the path in the server field and nothing is
+ambiguous. A shared *link* is the one place the secret changes form: under a base
+path it must carry the marked value derived below, so the installer prints the two
+under separate labels and neither is pasted in the other's place.
 
 A shareable WEB proxy link is:
 
@@ -324,15 +330,17 @@ https://t.me/webproxy?server=proxy.example.com&secret=000102030405060708090a0b0c
 ```
 
 With a base path the address is percent-encoded into the same `server` parameter
-and the secret changes form, so `deploy/install.sh` prints the finished link:
+and the secret changes form, so `deploy/install.sh` prints the internal secret and
+the client-facing one under separate labels, plus the finished link:
 
 ```text
-Client address: proxy.example.com/phcf2vfe7zgbrslg
-Client secret:  8561944064fc730cbfa4473562d8ec59
-Client link:    https://t.me/webproxy?server=proxy.example.com%2Fphcf2vfe7zgbrslg&secret=cIVhlEBk_HMMv6RHNWLY7Fk
+Internal mtproxy secret: 8561944064fc730cbfa4473562d8ec59
+Proxy server:            proxy.example.com/phcf2vfe7zgbrslg
+Proxy secret:            cIVhlEBk_HMMv6RHNWLY7Fk
+Proxy link:              https://t.me/webproxy?server=proxy.example.com%2Fphcf2vfe7zgbrslg&secret=cIVhlEBk_HMMv6RHNWLY7Fk
 ```
 
-The link secret is derived from the MTProxy secret in `profiles.json`:
+The proxy secret is derived from the MTProxy secret in `profiles.json`:
 
 ```text
 root deployment : secret          -> the plain hex, unchanged

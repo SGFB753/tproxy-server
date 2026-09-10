@@ -325,13 +325,13 @@ if [[ -z "$relay_ready" ]]; then
 	exit 1
 fi
 
-# The link secret for a base path deployment is base64url of the marker byte
-# 0x70 followed by the raw secret, so a client without base path support reports
-# an unsupported proxy type and asks the user to update, instead of accepting a
-# pathless proxy on an empty host. A root deployment keeps the plain secret and
-# keeps working in those clients. Never capture the raw secret in a variable: it
-# can contain NUL bytes, which command substitution drops.
-web_link_secret() {
+# The client-facing proxy secret. Under a base path it is base64url of the marker
+# byte 0x70 followed by the raw secret, so a client without base path support
+# reports an unsupported proxy type and asks the user to update, instead of
+# accepting a pathless proxy on an empty host. A root deployment keeps the plain
+# secret and keeps working in those clients. Never capture the raw secret in a
+# variable: it can contain NUL bytes, which command substitution drops.
+web_proxy_secret() {
 	if [[ -z "$base_path" ]]; then
 		printf %s "$secret"
 		return
@@ -346,13 +346,16 @@ client_address="$hostname"
 if [[ -n "$base_path" ]]; then
 	client_address="$hostname/$base_path"
 fi
-link_secret="$(web_link_secret)"
+proxy_secret="$(web_proxy_secret)"
 
+# The hex secret is the value shared with MTProxy; a link under a base path must
+# not carry it. Label the two apart so neither is pasted in the other's place.
 echo
 echo "Installed for https://$hostname/$base_path"
-echo "Client address: $client_address"
-echo "Client secret:  $secret"
-echo "Client link:    https://t.me/webproxy?server=${client_address//\//%2F}&secret=$link_secret"
+echo "Internal mtproxy secret: $secret"
+echo "Proxy server:            $client_address"
+echo "Proxy secret:            $proxy_secret"
+echo "Proxy link:              https://t.me/webproxy?server=${client_address//\//%2F}&secret=$proxy_secret"
 echo "Check: systemctl --no-pager --full status caddy mtproxy tproxy-server"
 echo "Check: curl --fail https://$hostname/"
 echo "Check: curl --fail http://127.0.0.1:8081/readyz"
