@@ -249,6 +249,28 @@ Expected listeners are public Caddy on 80/443 and loopback relay listeners on
 8080/8081. Official MTProxy listens on 2398 because its upstream command has no bind
 address option; nftables must drop that port on every non-loopback interface.
 
+Confirm MTProxy is actually reaching Telegram, not merely listening. Its
+middle-end connections must stay up:
+
+```bash
+journalctl -u mtproxy --since -5min | grep -c 'Disconnected from RPC Middle-End'
+```
+
+A steady stream of those lines means MTProxy is announcing an address Telegram
+does not see it arrive from, which happens whenever the host is behind 1:1 NAT
+(EC2, GCE, a container bridge). MTProxy derives the AES keys for its middle-end
+session from its own source address, so the two sides derive different keys and
+every middle-end connection is dropped right after the handshake. This failure is
+silent from the outside: clients still complete the obfuscated2 handshake against
+the proxy, the relay still accepts streams and grants `WINDOW`, and every stream
+then stalls forever with no error on any layer. `install.sh` detects NAT and sets
+`MTPROXY_NAT_ARGS` for you; set it by hand if the public address changes:
+
+```bash
+# in /etc/mtproxy/mtproxy.env
+MTPROXY_NAT_ARGS=--nat-info 10.0.0.5:203.0.113.7
+```
+
 From your own computer, verify the site and certificate:
 
 ```bash
@@ -633,12 +655,24 @@ when overriding the defaults.
   record rather than leaving IPv6 half-configured.
 - **`/readyz` returns 503:** inspect `systemctl status mtproxy`, then confirm a local
   TCP connection to `127.0.0.1:2398` and the downloaded files under `/etc/mtproxy`.
+  A successful TCP connection to that port proves only that MTProxy is listening.
+  It accepts every connection, including a bogus 64-byte header, and holds bad
+  ones open on purpose to resist active probing, so reachability is not health.
 - **The WebView shows the public site instead of connecting:** hostname and secret
   must match the server profile exactly; the client derives a different capability
   for every hostname/secret pair.
 - **The client remains in its connecting state:** confirm the WebView can load the
   exact HTTPS hostname, then use the platform-specific client document for native
   bridge, lifecycle, and fallback diagnostics.
+- **The client connects, the bridge and session work, and every stream then goes
+  quiet:** this is the NAT failure described in section 5, and it is the only
+  failure that produces no error anywhere. Streams reach `WINDOW` because the
+  relay really did write to MTProxy; MTProxy is the layer that answers nobody.
+  Check `journalctl -u mtproxy | grep 'Disconnected from RPC Middle-End'` and set
+  `MTPROXY_NAT_ARGS` in `/etc/mtproxy/mtproxy.env`. To isolate the backend from
+  the relay, drive `127.0.0.1:2398` directly with a client that performs the
+  obfuscated2 handshake and one `req_pq`: a healthy MTProxy returns `resPQ`
+  within a few hundred milliseconds.
 - **The public site works but the bridge fails:** inspect only sanitized service
   status and metrics. Never log bridge URLs or authorization headers.
 - **Configuration check fails on permissions:** the profiles file must have no group

@@ -225,10 +225,50 @@ backend_secret="$secret"
 if [[ "$backend_secret" == dd* ]] && [[ ${#backend_secret} -eq 34 ]]; then
 	backend_secret="${backend_secret:2}"
 fi
+# MTProxy derives the AES keys for its RPC session with a Telegram middle-end
+# from its own source address (net/net-tcp-rpc-client.c passes
+# nat_translate_ip(c->our_ip) and c->our_port into aes_create_keys). When the
+# host is behind 1:1 NAT - EC2, GCE, a container bridge - the middle-end derives
+# its half from the post-NAT public address instead, the two disagree, and every
+# middle-end connection is dropped right after the handshake with "Disconnected
+# from RPC Middle-End". Clients still complete the obfuscated2 handshake and are
+# then answered by nobody, so the proxy looks reachable and every stream stalls.
+mtproxy_nat_args=
+# The address MTProxy binds its outbound middle-end sockets to.
+local_address="$(ip -4 route get 149.154.175.50 2>/dev/null |
+	sed -n 's/.*[[:space:]]src[[:space:]]\+\([0-9.]\+\).*/\1/p' | head -n 1)"
+# The address a middle-end sees those sockets arrive from. An echo service
+# measures the egress address directly, which is what MTProxy has to hash; the
+# hostname's own A record is the offline fallback.
+public_address=
+for probe in https://api.ipify.org https://ifconfig.co/ip https://icanhazip.com; do
+	candidate="$(curl --fail --silent --show-error --location --ipv4 --max-time 15 \
+		--proto '=https' --proto-redir '=https' --tlsv1.2 "$probe" 2>/dev/null |
+		tr -d '[:space:]')" || continue
+	if [[ "$candidate" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+		public_address="$candidate"
+		break
+	fi
+done
+if [[ -z "$public_address" ]]; then
+	public_address="$(getent ahostsv4 "$hostname" 2>/dev/null | awk 'NR==1 {print $1}')"
+fi
+if [[ -n "$local_address" ]] && [[ -n "$public_address" ]] &&
+	[[ "$local_address" != "$public_address" ]]; then
+	mtproxy_nat_args="--nat-info $local_address:$public_address"
+	echo "MTProxy is behind NAT ($local_address -> $public_address), using $mtproxy_nat_args"
+elif [[ "$local_address" =~ ^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.) ]] &&
+	[[ -z "$mtproxy_nat_args" ]]; then
+	echo "warning: $local_address is private and the public address could not be" >&2
+	echo "determined; set MTPROXY_NAT_ARGS=--nat-info $local_address:<public-ip> in" >&2
+	echo "/etc/mtproxy/mtproxy.env or MTProxy will accept clients and answer none" >&2
+fi
+
 cat > /etc/mtproxy/mtproxy.env <<EOF
 MTPROXY_SECRET=$backend_secret
 MTPROXY_WORKERS=$mtproxy_workers
 MTPROXY_MAX_CONNECTIONS=$mtproxy_max_connections
+MTPROXY_NAT_ARGS=$mtproxy_nat_args
 EOF
 chown root:mtproxy /etc/mtproxy/mtproxy.env
 chmod 0640 /etc/mtproxy/mtproxy.env
