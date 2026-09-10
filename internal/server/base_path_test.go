@@ -150,3 +150,55 @@ func TestBasePathLeavesOtherPathsToTheSite(t *testing.T) {
 		}
 	}
 }
+
+// A request inside the prefix that proves no secret is not merely delegated: it
+// must reach the site application with the prefix still on the path. Stripping
+// it would serve the whole site a second time under the prefix, and answering
+// it from the relay instead would make in-prefix probes distinguishable from
+// every other unknown path the site answers.
+func TestBasePathDelegatesWithTheOriginalPath(t *testing.T) {
+	backend := startEchoBackend(t)
+	seen := make(chan string, 8)
+	site := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			seen <- r.URL.RequestURI()
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(siteMarker))
+		}))
+	defer site.Close()
+	secret, _ := hex.DecodeString("000102030405060708090a0b0c0d0e0f")
+	application, _ := newConfiguredTestServer(t, backend, func(value *config.Config) {
+		value.BasePath = testBasePath
+		value.PublicDir = ""
+		value.PublicUpstream = site.URL
+		value.Profiles[0].Capability =
+			config.DeriveCapability(testHost, testBasePath, secret)
+	})
+	defer application.Shutdown()
+	hosted := httptest.NewServer(application.Handler())
+	defer hosted.Close()
+
+	for _, target := range []string{
+		"/" + testBasePath + "/",
+		"/" + testBasePath + "/whatever?q=1",
+		"/" + testBasePath + "/api/v1/session",
+		"/" + testBasePath,
+		"/api/v1/ws",
+		"/" + testBasePath + "//api/v1/up",
+	} {
+		response := perform(t, hosted.Client(), request(t, http.MethodGet, hosted.URL+target, nil, ""))
+		body := readResponse(t, response)
+		if response.StatusCode != http.StatusNotFound ||
+			!bytes.Contains(body, []byte(siteMarker)) {
+			t.Fatalf("%s did not reach the site: status %d", target, response.StatusCode)
+		}
+		select {
+		case got := <-seen:
+			if got != target {
+				t.Fatalf("the site received %q for %q", got, target)
+			}
+		default:
+			t.Fatalf("the site never received %q", target)
+		}
+	}
+}
