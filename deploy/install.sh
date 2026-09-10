@@ -58,7 +58,7 @@ elif [[ -z "$base_path" ]]; then
 		echo "base32 (coreutils) is required to generate a base path; pass --base-path explicitly" >&2
 		exit 1
 	else
-		base_path="$(head -c 16 /dev/urandom | base32 | tr -d '=' | tr 'A-Z' 'a-z')"
+		base_path="$(head -c 10 /dev/urandom | base32 | tr 'A-Z' 'a-z')"
 	fi
 fi
 if [[ -n "$base_path" ]] && ! [[ "$base_path" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$ ]]; then
@@ -325,14 +325,34 @@ if [[ -z "$relay_ready" ]]; then
 	exit 1
 fi
 
+# The link secret for a base path deployment is base64url of the marker byte
+# 0x70 followed by the raw secret, so a client without base path support reports
+# an unsupported proxy type and asks the user to update, instead of accepting a
+# pathless proxy on an empty host. A root deployment keeps the plain secret and
+# keeps working in those clients. Never capture the raw secret in a variable: it
+# can contain NUL bytes, which command substitution drops.
+web_link_secret() {
+	if [[ -z "$base_path" ]]; then
+		printf %s "$secret"
+		return
+	fi
+	{
+		printf '\x70'
+		printf "$(printf %s "$secret" | sed 's/../\\x&/g')"
+	} | base64 | tr '+/' '-_' | tr -d '=\n'
+}
+
 client_address="$hostname"
 if [[ -n "$base_path" ]]; then
 	client_address="$hostname/$base_path"
 fi
+link_secret="$(web_link_secret)"
 
 echo
 echo "Installed for https://$hostname/$base_path"
 echo "Client address: $client_address"
+echo "Client secret:  $secret"
+echo "Client link:    https://t.me/webproxy?server=${client_address//\//%2F}&secret=$link_secret"
 echo "Check: systemctl --no-pager --full status caddy mtproxy tproxy-server"
 echo "Check: curl --fail https://$hostname/"
 echo "Check: curl --fail http://127.0.0.1:8081/readyz"

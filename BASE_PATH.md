@@ -94,7 +94,7 @@ weaker for a publicly posted link. Keep the two branches as similar as you can
 ```json
 {
   "public_hostname": "example.com",
-  "base_path": "kecjyr5ti4qtvquhyva43e5h24",
+  "base_path": "phcf2vfe7zgbrslg",
   "listen": "127.0.0.1:8080",
   "admin_listen": "127.0.0.1:8081",
   "public_upstream": "http://127.0.0.1:3000",
@@ -114,23 +114,31 @@ rule: a human-readable prefix, mixed case and several segments are all equally
 correct. What follows is only what this server generates when the operator does
 not pick one.
 
-The default is unpadded lowercase RFC 4648 base32 of 16 random bytes: 26
-characters, 128 bits, every character inside the allowed alphabet and a valid
-first character by construction.
+The default is lowercase RFC 4648 base32 of 10 random bytes: 16 characters, 80
+bits, every character inside the allowed alphabet and a valid first character by
+construction. Ten bytes is a multiple of five, so the encoding is exact — no
+padding to strip and no partial final character.
 
 ```bash
-head -c 16 /dev/urandom | base32 | tr -d '=' | tr 'A-Z' 'a-z'
-# kecjyr5ti4qtvquhyva43e5h24
+head -c 10 /dev/urandom | base32 | tr 'A-Z' 'a-z'
+# phcf2vfe7zgbrslg
 ```
 
-Unpadded base64url is also in-alphabet and shorter (22 characters), but about 3%
+Eighty bits is far more than the job needs, because guessing the prefix has no
+oracle: without a capability, a correct guess returns the site's own 404 for that
+path, byte for byte identical to any wrong guess, so an attacker cannot even tell
+a hit from a miss. The prefix earns its length by not colliding with the site's
+real routes, not by resisting brute force.
+
+Unpadded base64url is also in-alphabet and shorter, but about 3%
 of its outputs begin with `-` or `_`, which the first-character rule rejects and a
 generator would have to retry; base32 has no such case, so this generator uses
 it. Standard base64 is not usable at all — `+`, `/` and `=` are outside the
 alphabet — and base64 must never be lowercased.
 
-Length is not the interesting variable: nothing fuzzes 128 bits, and 256 bits is no
-better at that job. How the link is distributed is what decides the prefix's value.
+Length is not the interesting variable: guessing the prefix has no oracle at all,
+and no scanner fuzzes 80 bits blind. How the link is distributed is what decides
+the prefix's value.
 
 Shared privately — a family, a handful of friends — the prefix is a real second
 unknown. Someone probing the hostname finds the website and nothing else: no
@@ -152,12 +160,38 @@ reads them — a hosting control panel, an analytics vendor, a CDN. It is guessa
 by a human who thinks about it, so it trades scanner resistance for that.
 
 The client link carries the whole address in one percent-encoded `server`
-parameter:
+parameter, and encodes its secret as unpadded base64url of the byte `0x70`
+followed by the real secret:
 
 ```text
-tg://webproxy?server=example.com%2Fkecjyr5ti4qtvquhyva43e5h24&secret=<secret>
-https://t.me/webproxy?server=example.com%2Fkecjyr5ti4qtvquhyva43e5h24&secret=<secret>
+tg://webproxy?server=example.com%2Fphcf2vfe7zgbrslg&secret=<marked>
+https://t.me/webproxy?server=example.com%2Fphcf2vfe7zgbrslg&secret=<marked>
 ```
+
+```bash
+# <marked> from the secret in profiles.json, as deploy/install.sh derives it.
+# xxd is deliberately not used: it ships with vim-common, which a clean server
+# need not have. The raw secret is piped, never captured, because command
+# substitution drops NUL bytes.
+{ printf '\x70'; printf "$(printf %s "$secret" | sed 's/../\\x&/g')"; } \
+  | base64 | tr '+/' '-_' | tr -d '=\n'
+# 8561944064fc730cbfa4473562d8ec59 -> cIVhlEBk_HMMv6RHNWLY7Fk
+```
+
+A client decodes by the inverse rule: base64url-decode, and if the result is at
+least 17 bytes and starts with `0x70`, strip that byte and use the rest;
+otherwise use the value as it stands. That is unambiguous because a canonical
+secret is 16 bytes, 17 starting with `0xDD`, or 21+ starting with `0xEE`. A link
+carrying a base path must use the marked form — an unmarked secret there is
+rejected, so no link exists that an older client would take for a pathless proxy
+on an empty host.
+
+The marker exists because a client without base path support normalizes
+`host/path` to an empty host, finds nothing else wrong, and offers to connect to
+it. With the marked secret such a client instead decodes 17 bytes not starting
+with `0xDD`, reports an unsupported proxy type and asks the user to update. Never
+use `0xDD` as the marker: it is read as an ordinary padded secret and accepted. A
+root link keeps the plain secret, so older clients keep working with it.
 
 Installer surface: `--base-path <slug>` to pin one, `--base-path none` for the
 root, and a freshly generated random slug when the flag is absent on a new
@@ -193,7 +227,7 @@ server {
     # break the transport with 413.
     client_max_body_size 4m;
 
-    location ^~ /kecjyr5ti4qtvquhyva43e5h24/ {
+    location ^~ /phcf2vfe7zgbrslg/ {
         # No URI part after the upstream name: the original path, including the
         # prefix, is forwarded unchanged. Do NOT write `.../;` here.
         proxy_pass http://tproxy_relay;
@@ -224,7 +258,7 @@ server {
 ```
 
 `^~` stops regex locations from stealing the prefix. A request to
-`/kecjyr5ti4qtvquhyva43e5h24` without the trailing slash does not match and is
+`/phcf2vfe7zgbrslg` without the trailing slash does not match and is
 answered by the website — which is exactly the intended behavior.
 
 ### The decoy inside the prefix
@@ -263,7 +297,7 @@ example.com {
 	encode zstd gzip
 	header -Via
 
-	handle /kecjyr5ti4qtvquhyva43e5h24/* {
+	handle /phcf2vfe7zgbrslg/* {
 		reverse_proxy 127.0.0.1:8080 {
 			transport http {
 				response_header_timeout 40s
@@ -326,8 +360,8 @@ Code:
   `relayOrigin + "/"`. Without this a prefixed deployment bootstraps correctly and
   then requests the carrier at the root.
 - `deploy/install.sh`: `--base-path <slug|none>` accepting any §1-valid path, and
-  defaulting on a new install to a generated 16-byte base32 slug (§3), written
-  into `config.json` and echoed in the client address as `host/slug`.
+  defaulting on a new install to a generated 16-character base32 slug (§3),
+  written into `config.json` and echoed in the client address as `host/slug`.
 
 Tests: prefix routing for bridge and all four carrier paths; root regression;
 cross-prefix and root-vs-prefix capability rejection; a prefix request with no

@@ -312,9 +312,9 @@ Secret:  000102030405060708090a0b0c0d0e0f
 ```
 
 The address is the hostname, plus the base path when one is configured, as in
-`proxy.example.com/kecjyr5ti4qtvquhyva43e5h24`. It contains no `https://`, port,
-query, or fragment. HTTPS and port 443 are fixed by the WEB proxy type. Internationalized domains are stored
-as lowercase ASCII IDNA A-labels. The secret is the same client-facing MTProxy
+`proxy.example.com/phcf2vfe7zgbrslg`. It contains no `https://`, port, query, or
+fragment. HTTPS and port 443 are fixed by the WEB proxy type. Internationalized
+domains are stored as lowercase ASCII IDNA A-labels. The secret is the same client-facing MTProxy
 secret configured in the corresponding server profile.
 
 A shareable WEB proxy link is:
@@ -323,9 +323,40 @@ A shareable WEB proxy link is:
 https://t.me/webproxy?server=proxy.example.com&secret=000102030405060708090a0b0c0d0e0f
 ```
 
-With a base path the address is percent-encoded into the same `server` parameter,
-as `server=proxy.example.com%2Fkecjyr5ti4qtvquhyva43e5h24`. There is no separate
-path parameter; see [BASE_PATH.md](BASE_PATH.md).
+With a base path the address is percent-encoded into the same `server` parameter
+and the secret changes form, so `deploy/install.sh` prints the finished link:
+
+```text
+Client address: proxy.example.com/phcf2vfe7zgbrslg
+Client secret:  8561944064fc730cbfa4473562d8ec59
+Client link:    https://t.me/webproxy?server=proxy.example.com%2Fphcf2vfe7zgbrslg&secret=cIVhlEBk_HMMv6RHNWLY7Fk
+```
+
+The link secret is derived from the MTProxy secret in `profiles.json`:
+
+```text
+root deployment : secret          -> the plain hex, unchanged
+base path       : 0x70 || secret  -> unpadded base64url
+```
+
+```bash
+# the exact derivation deploy/install.sh performs
+{ printf '\x70'; printf "$(printf %s "$secret" | sed 's/../\\x&/g')"; } \
+  | base64 | tr '+/' '-_' | tr -d '=\n'
+# 8561944064fc730cbfa4473562d8ec59 -> cIVhlEBk_HMMv6RHNWLY7Fk
+```
+
+A client decodes it by the inverse rule: base64url-decode, and if the result is
+at least 17 bytes and begins with `0x70`, strip that byte and use the rest as the
+MTProxy secret; otherwise use the value as it stands. This is unambiguous because
+a canonical secret is 16 bytes, 17 beginning with `0xDD`, or 21+ beginning with
+`0xEE`. A link that carries a base path **must** use the marked form — an unmarked
+secret there is rejected, so that no link exists which an older client would
+silently accept as a pathless proxy on an empty host. Never use `0xDD` as the
+marker: an older parser reads a 17-byte secret beginning with it as an ordinary
+padded secret and accepts the link.
+
+There is no separate path parameter; see [BASE_PATH.md](BASE_PATH.md).
 
 Clients may also accept the equivalent `tg://webproxy` form. The public `t.me`
 frontend does not yet register this route, so proof-of-concept testing may require
