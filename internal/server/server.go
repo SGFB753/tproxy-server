@@ -41,6 +41,7 @@ const bodyReadDeadline = 30 * time.Second
 
 type Server struct {
 	config           config.Config
+	base             string
 	manager          *session.Manager
 	site             *staticSite
 	publicUpstream   http.Handler
@@ -95,6 +96,7 @@ func New(value config.Config) (*Server, error) {
 	}
 	return &Server{
 		config:           value,
+		base:             value.Base(),
 		manager:          session.NewManager(value, tokenKey),
 		site:             site,
 		publicUpstream:   publicUpstream,
@@ -150,8 +152,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveNotFound(w, r)
 		return
 	}
-	if isTransportPath(r.URL.Path) && r.URL.EscapedPath() == r.URL.Path {
-		s.serveAPI(w, r)
+	if suffix, ok := s.transportSuffix(r.URL.Path); ok && r.URL.EscapedPath() == r.URL.Path {
+		s.serveAPI(w, r, suffix)
 		return
 	}
 	if profile := s.bridgeProfile(r); profile != nil {
@@ -174,6 +176,7 @@ func (s *Server) serveBridge(w http.ResponseWriter, r *http.Request, profile *co
 	}
 	page, err := bridge.Render(
 		s.config.PublicHostname,
+		s.config.BasePath,
 		token,
 		string(profile.CarrierMode.WithDefault()),
 		s.config.Limits.CarrierBatchBytes)
@@ -193,11 +196,11 @@ func (s *Server) serveBridge(w http.ResponseWriter, r *http.Request, profile *co
 	_, _ = w.Write(page.Body)
 }
 
-func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
+func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request, suffix string) {
 	if r.URL.RawQuery != "" || r.URL.ForceQuery ||
 		len(r.Header.Values("Authorization")) > 1 ||
 		len(r.Header.Values("Sec-WebSocket-Protocol")) > 1 ||
-		(r.Header.Get("Cookie") != "" && r.URL.Path != "/api/v1/ws") {
+		(r.Header.Get("Cookie") != "" && suffix != "api/v1/ws") {
 		s.serveNotFound(w, r)
 		return
 	}
@@ -206,7 +209,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.serveNotFound(w, r)
 		return
 	}
-	if r.URL.Path == "/api/v1/ws" {
+	if suffix == "api/v1/ws" {
 		s.serveWebSocket(w, r)
 		return
 	}
@@ -215,12 +218,12 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.serveNotFound(w, r)
 		return
 	}
-	switch r.URL.Path {
-	case "/api/v1/session":
+	switch suffix {
+	case "api/v1/session":
 		s.serveSession(w, r, token, clientIP)
-	case "/api/v1/up":
+	case "api/v1/up":
 		s.serveUp(w, r, token)
-	case "/api/v1/down":
+	case "api/v1/down":
 		s.serveDown(w, r, token)
 	default:
 		s.serveNotFound(w, r)
@@ -633,6 +636,9 @@ func (s *Server) clientIP(r *http.Request) (string, error) {
 	return parsed.String(), nil
 }
 
+// The request reaches the site with its original path, base prefix included. A
+// stripped prefix would expose the whole site a second time under it, which is a
+// far louder signature than the 404 it would replace.
 func (s *Server) servePublic(w http.ResponseWriter, r *http.Request) {
 	if s.publicUpstream != nil {
 		s.publicUpstream.ServeHTTP(w, r)
@@ -656,12 +662,18 @@ func (s *Server) serveNotFound(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func isTransportPath(requestPath string) bool {
-	switch requestPath {
-	case "/api/v1/session", "/api/v1/up", "/api/v1/down", "/api/v1/ws":
-		return true
+// transportSuffix names the carrier endpoint a request path selects, relative to
+// the configured base. A path outside the base, or one naming anything else, is
+// not carrier traffic and stays with the bridge or public handlers.
+func (s *Server) transportSuffix(requestPath string) (string, bool) {
+	if !strings.HasPrefix(requestPath, s.base) {
+		return "", false
 	}
-	return false
+	switch suffix := requestPath[len(s.base):]; suffix {
+	case "api/v1/session", "api/v1/up", "api/v1/down", "api/v1/ws":
+		return suffix, true
+	}
+	return "", false
 }
 
 func (s *Server) serveReady(w http.ResponseWriter, r *http.Request) {

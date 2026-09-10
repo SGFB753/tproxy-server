@@ -70,7 +70,7 @@ func TestPublicFallbackAndCarrierRoundTrip(t *testing.T) {
 	}
 
 	secret, _ := hex.DecodeString("000102030405060708090a0b0c0d0e0f")
-	capability := config.CapabilityString(config.DeriveCapability(testHost, secret))
+	capability := config.CapabilityString(config.DeriveCapability(testHost, "", secret))
 	for _, query := range []string{
 		"bridge=" + capability + "&extra=1",
 		"bridge=" + capability + "&bridge=" + capability,
@@ -721,12 +721,12 @@ func TestDynamicPublicUpstreamAndTransportCoexist(t *testing.T) {
 		t.Fatalf("invalid carrier did not receive the application fallback: %d", response.StatusCode)
 	}
 	secret, _ := hex.DecodeString("000102030405060708090a0b0c0d0e0f")
-	capability := config.CapabilityString(config.DeriveCapability(testHost, secret))
+	capability := config.CapabilityString(config.DeriveCapability(testHost, "", secret))
 	response = perform(t, hosted.Client(), request(t, http.MethodGet, hosted.URL+"/?bridge="+capability, nil, ""))
 	body := readResponse(t, response)
 	if response.StatusCode != http.StatusOK ||
 		response.Header.Get("X-Public-Application") != "" ||
-		!bytes.Contains(body, []byte("/api/v1/session")) {
+		!bytes.Contains(body, []byte("api/v1/session")) {
 		t.Fatalf("valid bridge was delegated to the public application: %d", response.StatusCode)
 	}
 	if len(requests) != 4 {
@@ -821,7 +821,7 @@ func newConfiguredTestServer(
 	value.Profiles = []config.Profile{{
 		Name:       "default",
 		Backend:    backend,
-		Capability: config.DeriveCapability(testHost, secret),
+		Capability: config.DeriveCapability(testHost, "", secret),
 	}}
 	if configure != nil {
 		configure(&value)

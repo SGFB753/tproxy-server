@@ -3,6 +3,7 @@ set -euo pipefail
 umask 077
 
 hostname=
+base_path=
 secret=
 email=
 site_dir=
@@ -12,12 +13,13 @@ mtproxy_workers=1
 mtproxy_max_connections=4096
 
 usage() {
-	echo "usage: sudo ./deploy/install.sh --hostname proxy.example.com --email admin@example.com [--site-dir DIR | --site-upstream URL] [--static-routes exact|legacy] [--secret 32-or-34-hex] [--mtproxy-workers 1] [--mtproxy-max-connections 4096]" >&2
+	echo "usage: sudo ./deploy/install.sh --hostname proxy.example.com --email admin@example.com [--site-dir DIR | --site-upstream URL] [--base-path SLUG|none] [--static-routes exact|legacy] [--secret 32-or-34-hex] [--mtproxy-workers 1] [--mtproxy-max-connections 4096]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--hostname) hostname="${2:-}"; shift 2 ;;
+		--base-path) base_path="${2:-}"; shift 2 ;;
 		--secret) secret="${2:-}"; shift 2 ;;
 		--email) email="${2:-}"; shift 2 ;;
 		--site-dir) site_dir="${2:-}"; shift 2 ;;
@@ -40,6 +42,33 @@ fi
 if [[ -z "$secret" ]]; then
 	read -r -s -p "WEB proxy secret (32 hex, optionally prefixed with dd): " secret
 	echo
+fi
+# A new deployment gets a fresh 128-bit slug, so its carrier stays off
+# well-known root paths by default. "none" selects the host root, which is what
+# every installation made before base paths existed serves.
+if [[ "$base_path" == "none" ]]; then
+	base_path=
+elif [[ -z "$base_path" ]]; then
+	if [[ -f /etc/tproxy-server/config.json ]]; then
+		# A reinstall keeps whatever this host already serves. Rotating the
+		# prefix would invalidate every client link and drop live sessions, and
+		# a config predating the key is serving the root.
+		base_path="$(sed -n 's/.*"base_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /etc/tproxy-server/config.json | head -n1)"
+	elif ! command -v base32 >/dev/null; then
+		echo "base32 (coreutils) is required to generate a base path; pass --base-path explicitly" >&2
+		exit 1
+	else
+		base_path="$(head -c 16 /dev/urandom | base32 | tr -d '=' | tr 'A-Z' 'a-z')"
+	fi
+fi
+if [[ -n "$base_path" ]] && ! [[ "$base_path" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$ ]]; then
+	echo "base path segments must match [A-Za-z0-9][A-Za-z0-9_-]* joined by /" >&2
+	usage
+	exit 1
+fi
+if [[ ${#base_path} -gt 128 ]]; then
+	echo "base path must be at most 128 characters" >&2
+	exit 1
 fi
 if [[ ! "$hostname" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || [[ "$hostname" != *.* ]]; then
 	echo "hostname must be a lowercase ASCII DNS hostname" >&2
@@ -177,6 +206,7 @@ bash "$repository/deploy/ensure-token-key.sh"
 cat > /etc/tproxy-server/config.json <<EOF
 {
   "public_hostname": "$hostname",
+  "base_path": "$base_path",
   "listen": "127.0.0.1:8080",
   "admin_listen": "127.0.0.1:8081",
 $public_source
@@ -255,8 +285,14 @@ if [[ -z "$relay_ready" ]]; then
 	exit 1
 fi
 
+client_address="$hostname"
+if [[ -n "$base_path" ]]; then
+	client_address="$hostname/$base_path"
+fi
+
 echo
-echo "Installed for https://$hostname/"
+echo "Installed for https://$hostname/$base_path"
+echo "Client address: $client_address"
 echo "Check: systemctl --no-pager --full status caddy mtproxy tproxy-server"
 echo "Check: curl --fail https://$hostname/"
 echo "Check: curl --fail http://127.0.0.1:8081/readyz"

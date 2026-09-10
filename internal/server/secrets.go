@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Server) bridgeProfile(r *http.Request) *config.Profile {
-	if r.Method != http.MethodGet || r.URL.EscapedPath() != "/" ||
+	if r.Method != http.MethodGet || r.URL.EscapedPath() != s.base ||
 		len(r.URL.RawQuery) != len("bridge=")+43 ||
 		!strings.HasPrefix(r.URL.RawQuery, "bridge=") {
 		return nil

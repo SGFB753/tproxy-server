@@ -4,9 +4,8 @@ A relay may serve its whole surface under a path prefix instead of the host root
 so one hostname can run an ordinary website *and* a relay without the relay
 becoming the gateway for the entire site.
 
-**Status.** Telegram Desktop implements the client half. This server does not
-implement it yet; this document is the design, the operator model, and the rollout
-plan. §7 lists the exact code and doc changes the implementation makes.
+**Status.** Implemented, in this server and in Telegram Desktop. §7 records what
+the implementation covers and what a rollout should check.
 
 ## 1. Wire layout
 
@@ -312,7 +311,7 @@ capability scanning of request metadata, the loopback-only listeners, the
 `X-Forwarded-For` single-address rule, and every response header of the bridge.
 A root deployment is byte-identical to today.
 
-## 7. Implementation checklist
+## 7. What the implementation covers
 
 Code:
 

@@ -170,7 +170,7 @@ func TestBridgeLimitFailsLocally(t *testing.T) {
 	defer hosted.Close()
 
 	secret, _ := hex.DecodeString("000102030405060708090a0b0c0d0e0f")
-	capability := config.CapabilityString(config.DeriveCapability(testHost, secret))
+	capability := config.CapabilityString(config.DeriveCapability(testHost, "", secret))
 	first := perform(t, hosted.Client(), request(t, http.MethodGet, hosted.URL+"/?bridge="+url.QueryEscape(capability), nil, ""))
 	if body := readResponse(t, first); first.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("tproxy-init")) {
 		t.Fatalf("first bridge request failed: %d", first.StatusCode)
@@ -238,7 +238,7 @@ func TestSessionCreateAuthenticatesBeforeReadingBody(t *testing.T) {
 
 	// A known bootstrap retains the tiny session-create body cap.
 	secret, _ := hex.DecodeString("000102030405060708090a0b0c0d0e0f")
-	capability := config.CapabilityString(config.DeriveCapability(testHost, secret))
+	capability := config.CapabilityString(config.DeriveCapability(testHost, "", secret))
 	bridge := perform(t, hosted.Client(), request(t, http.MethodGet, hosted.URL+"/?bridge="+url.QueryEscape(capability), nil, ""))
 	bridgeBody := readResponse(t, bridge)
 	start := bytes.Index(bridgeBody, []byte(`bootstrap="`))
@@ -270,7 +270,7 @@ func TestConcurrentUplinkIsRetryableAndDownlinkSupersedes(t *testing.T) {
 	defer hosted.Close()
 
 	secret, _ := hex.DecodeString("000102030405060708090a0b0c0d0e0f")
-	capability := config.CapabilityString(config.DeriveCapability(testHost, secret))
+	capability := config.CapabilityString(config.DeriveCapability(testHost, "", secret))
 	bridge := perform(t, hosted.Client(), request(t, http.MethodGet, hosted.URL+"/?bridge="+url.QueryEscape(capability), nil, ""))
 	bridgeBody := readResponse(t, bridge)
 	start := bytes.Index(bridgeBody, []byte(`bootstrap="`))

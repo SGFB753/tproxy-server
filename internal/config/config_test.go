@@ -22,7 +22,7 @@ func TestCapabilityVectors(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := CapabilityString(DeriveCapability("proxy.example.com", secret))
+		got := CapabilityString(DeriveCapability("proxy.example.com", "", secret))
 		if got != test.want {
 			t.Fatalf("got %q, want %q", got, test.want)
 		}

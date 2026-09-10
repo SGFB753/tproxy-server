@@ -19,7 +19,13 @@ import (
 	"time"
 )
 
-const capabilityContext = "tdesktop-web-proxy-bridge-v1\n"
+const (
+	capabilityContext   = "tdesktop-web-proxy-bridge-v1\n"
+	capabilityContextV2 = "tdesktop-web-proxy-bridge-v2\n"
+)
+
+// MaxBasePathLength bounds the optional relay prefix. See BASE_PATH.md.
+const MaxBasePathLength = 128
 
 // MaxCarrierBatchBytes is the largest downlink body a carrier may deliver:
 // the desktop client's browser-fallback loopback WebSocket rejects messages
@@ -106,6 +112,7 @@ type Timeouts struct {
 
 type Config struct {
 	PublicHostname   string    `json:"public_hostname"`
+	BasePath         string    `json:"base_path"`
 	Listen           string    `json:"listen"`
 	AdminListen      string    `json:"admin_listen"`
 	PublicDir        string    `json:"public_dir"`
@@ -263,7 +270,7 @@ func Load(path string, profilesOverride ...string) (Config, error) {
 	if err := result.validate(); err != nil {
 		return Config{}, err
 	}
-	profiles, err := loadProfiles(result.ProfilesFile, result.PublicHostname, result.Limits)
+	profiles, err := loadProfiles(result.ProfilesFile, result.PublicHostname, result.BasePath, result.Limits)
 	if err != nil {
 		return Config{}, err
 	}
@@ -280,6 +287,9 @@ func (c Config) validate() error {
 	}
 	if c.PublicHostname != strings.ToLower(c.PublicHostname) {
 		return errors.New("public_hostname must already be lowercase ASCII/IDNA")
+	}
+	if err := ValidateBasePath(c.BasePath); err != nil {
+		return fmt.Errorf("base_path: %w", err)
 	}
 	if err := validateLoopbackAddress(c.Listen); err != nil {
 		return fmt.Errorf("listen: %w", err)
@@ -379,9 +389,65 @@ func ValidateHostname(host string) error {
 	return nil
 }
 
-func DeriveCapability(host string, secret []byte) [sha256.Size]byte {
+// DeriveCapability binds the capability to the host, and to the base path when
+// one is configured. A root deployment keeps the frozen v1 context byte for
+// byte, so a capability minted for one prefix authenticates nothing at another
+// prefix or at the root.
+// ValidateBasePath accepts only the canonical form: one or more "/"-separated
+// segments, each starting with an ASCII letter or digit and continuing with
+// those, "-" or "_". An empty value serves the host root. "." is not in the
+// alphabet, so "." and ".." segments cannot occur and no dot-segment resolution
+// is ever needed. Noncanonical values are rejected rather than repaired, so the
+// configured value and the wire path stay the same string.
+func ValidateBasePath(path string) error {
+	if path == "" {
+		return nil
+	}
+	if len(path) > MaxBasePathLength {
+		return fmt.Errorf("must be at most %d characters", MaxBasePathLength)
+	}
+	if strings.HasPrefix(path, "/") || strings.HasSuffix(path, "/") {
+		return errors.New("must not start or end with \"/\"")
+	}
+	for _, segment := range strings.Split(path, "/") {
+		if segment == "" {
+			return errors.New("must not contain an empty segment")
+		}
+		for i := 0; i < len(segment); i++ {
+			character := segment[i]
+			switch {
+			case character >= 'a' && character <= 'z',
+				character >= 'A' && character <= 'Z',
+				character >= '0' && character <= '9':
+			case (character == '-' || character == '_') && i > 0:
+			default:
+				return errors.New("segments must match [A-Za-z0-9][A-Za-z0-9_-]*")
+			}
+		}
+	}
+	return nil
+}
+
+// Base is the wire prefix every relay endpoint sits under. It always begins and
+// ends with "/", so an endpoint is Base() + "api/v1/up".
+func Base(basePath string) string {
+	if basePath == "" {
+		return "/"
+	}
+	return "/" + basePath + "/"
+}
+
+func (c Config) Base() string {
+	return Base(c.BasePath)
+}
+
+func DeriveCapability(host, basePath string, secret []byte) [sha256.Size]byte {
 	mac := hmac.New(sha256.New, secret)
-	_, _ = mac.Write([]byte(capabilityContext + host))
+	if basePath == "" {
+		_, _ = mac.Write([]byte(capabilityContext + host))
+	} else {
+		_, _ = mac.Write([]byte(capabilityContextV2 + host + "\n" + basePath))
+	}
 	var result [sha256.Size]byte
 	copy(result[:], mac.Sum(nil))
 	return result
@@ -448,7 +514,7 @@ func validatePublicUpstream(raw string) error {
 	return nil
 }
 
-func loadProfiles(path, host string, limits Limits) ([]Profile, error) {
+func loadProfiles(path, host, basePath string, limits Limits) ([]Profile, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("profiles_file: %w", err)
@@ -505,7 +571,7 @@ func loadProfiles(path, host string, limits Limits) ([]Profile, error) {
 		if err != nil {
 			return nil, fmt.Errorf("profile %q: %w", input.Name, err)
 		}
-		capability := DeriveCapability(host, secret)
+		capability := DeriveCapability(host, basePath, secret)
 		for i := range secret {
 			secret[i] = 0
 		}

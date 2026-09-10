@@ -42,8 +42,7 @@ A relay may also serve its whole surface under a base path, so that `GET /` abov
 becomes `GET /<base-path>/` and every `/api/v1/…` endpoint moves under the same
 prefix. That variant derives its capability from a `tdesktop-web-proxy-bridge-v2`
 context binding both host and path, leaving the root derivation byte-identical.
-Telegram Desktop implements it; this server does not yet. See
-[BASE_PATH.md](BASE_PATH.md).
+See [BASE_PATH.md](BASE_PATH.md).
 
 ## Client-to-bridge boundary
 

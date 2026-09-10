@@ -285,12 +285,13 @@ client derives it in memory.
 A WEB-capable Telegram app accepts exactly two user-visible values:
 
 ```text
-Hostname: proxy.example.com
-Secret:   000102030405060708090a0b0c0d0e0f
+Address: proxy.example.com
+Secret:  000102030405060708090a0b0c0d0e0f
 ```
 
-The hostname field contains no `https://`, port, slash, query, or fragment. HTTPS
-and port 443 are fixed by the WEB proxy type. Internationalized domains are stored
+The address is the hostname, plus the base path when one is configured, as in
+`proxy.example.com/kecjyr5ti4qtvquhyva43e5h24`. It contains no `https://`, port,
+query, or fragment. HTTPS and port 443 are fixed by the WEB proxy type. Internationalized domains are stored
 as lowercase ASCII IDNA A-labels. The secret is the same client-facing MTProxy
 secret configured in the corresponding server profile.
 
@@ -299,6 +300,10 @@ A shareable WEB proxy link is:
 ```text
 https://t.me/webproxy?server=proxy.example.com&secret=000102030405060708090a0b0c0d0e0f
 ```
+
+With a base path the address is percent-encoded into the same `server` parameter,
+as `server=proxy.example.com%2Fkecjyr5ti4qtvquhyva43e5h24`. There is no separate
+path parameter; see [BASE_PATH.md](BASE_PATH.md).
 
 Clients may also accept the equivalent `tg://webproxy` form. The public `t.me`
 frontend does not yet register this route, so proof-of-concept testing may require

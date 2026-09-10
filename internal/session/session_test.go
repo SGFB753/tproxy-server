@@ -831,7 +831,7 @@ func TestProfileSessionLimitDoesNotConsumeGlobalCapacity(t *testing.T) {
 	configuration.Profiles = append(configuration.Profiles, config.Profile{
 		Name:       "second",
 		Backend:    "127.0.0.1:1",
-		Capability: config.DeriveCapability("proxy.example.com", secondSecret),
+		Capability: config.DeriveCapability("proxy.example.com", "", secondSecret),
 	})
 	manager := NewManager(configuration, [32]byte{1})
 	defer manager.Shutdown()
@@ -988,7 +988,7 @@ func testConfig(backend string) config.Config {
 	value.Profiles = []config.Profile{{
 		Name:       "default",
 		Backend:    backend,
-		Capability: config.DeriveCapability("proxy.example.com", secret),
+		Capability: config.DeriveCapability("proxy.example.com", "", secret),
 	}}
 	return value
 }
