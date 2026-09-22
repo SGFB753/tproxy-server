@@ -342,6 +342,7 @@ systemctl enable --now tproxy-firewall.service
 systemctl enable --now mtproxy.service
 systemctl restart mtproxy.service
 systemctl enable --now tproxy-server.service
+systemctl restart tproxy-server.service
 systemctl enable --now refresh-mtproxy-config.timer
 systemctl enable --now caddy.service
 systemctl restart caddy.service
