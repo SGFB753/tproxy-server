@@ -8,6 +8,7 @@ hostname=''
 email=''
 secret=''
 site_dir=''
+cover_site=''
 base_path='none'
 workers=1
 max_connections=4096
@@ -26,6 +27,7 @@ Options:
   --hostname DOMAIN          Public lowercase DNS hostname
   --email EMAIL              Optional ACME contact email
   --secret HEX               16-byte MTProxy secret (generated when omitted)
+  --cover-site DOMAIN        HTTPS masking site (a hostname or https:// URL)
   --site-dir DIR             Existing cover site containing index.html
   --base-path SLUG|none      Relay base path (default: none for mobile compatibility)
   --workers N                Official MTProxy workers (default: 1)
@@ -48,6 +50,7 @@ while [[ $# -gt 0 ]]; do
 		--hostname) hostname="${2:-}"; shift 2 ;;
 		--email) email="${2:-}"; shift 2 ;;
 		--secret) secret="${2:-}"; shift 2 ;;
+		--cover-site) cover_site="${2:-}"; shift 2 ;;
 		--site-dir) site_dir="${2:-}"; shift 2 ;;
 		--base-path) base_path="${2:-}"; shift 2 ;;
 		--workers) workers="${2:-}"; shift 2 ;;
@@ -90,6 +93,10 @@ if [[ -z "$secret" ]]; then
 	[[ -r /dev/tty ]] || die 'no terminal is available; pass an existing key with --secret or use an interactive terminal'
 	read -r -s -p 'Existing proxy key (32 hex, or 34 with dd; leave empty to generate): ' secret </dev/tty
 	printf '\n' >/dev/tty
+fi
+if [[ -z "$cover_site" && -z "$site_dir" ]]; then
+	[[ -r /dev/tty ]] || die 'no terminal is available; pass the masking site with --cover-site'
+	read -r -p 'Masking site (for example, segefebe.ru): ' cover_site </dev/tty
 fi
 
 export DEBIAN_FRONTEND=noninteractive
@@ -137,17 +144,19 @@ else
 	repository="$install_directory"
 fi
 
-if [[ -z "$site_dir" ]]; then
+if [[ -z "$site_dir" && -z "$cover_site" ]]; then
 	site_dir='/srv/tproxy-quick-site'
 	install -d -m 0755 "$site_dir"
 	if [[ ! -f "$site_dir/index.html" ]]; then
 		install -m 0644 "$repository/deploy/quick-site.html" "$site_dir/index.html"
 	fi
 fi
-[[ -f "$site_dir/index.html" ]] || die "cover site has no index.html: ${site_dir}"
+if [[ -n "$site_dir" ]]; then
+	[[ -f "$site_dir/index.html" ]] || die "cover site has no index.html: ${site_dir}"
+fi
 
 printf '\nHost:          %s\n' "$hostname"
-printf 'Cover site:    %s\n' "$site_dir"
+printf 'Masking site:  %s\n' "${cover_site:-$site_dir}"
 printf 'Base path:     %s\n' "$base_path"
 printf 'Source:        %s\n\n' "$repository"
 if (( assume_yes == 0 )); then
@@ -163,11 +172,15 @@ fi
 
 installer_arguments=(
 	--hostname "$hostname"
-	--site-dir "$site_dir"
 	--base-path "$base_path"
 	--mtproxy-workers "$workers"
 	--mtproxy-max-connections "$max_connections"
 )
+if [[ -n "$cover_site" ]]; then
+	installer_arguments+=(--cover-site "$cover_site")
+else
+	installer_arguments+=(--site-dir "$site_dir")
+fi
 if [[ -n "$email" ]]; then
 	installer_arguments+=(--email "$email")
 fi

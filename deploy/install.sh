@@ -8,12 +8,14 @@ secret=
 email=
 site_dir=
 site_upstream=
+cover_site=
+cover_host=
 static_routes=exact
 mtproxy_workers=1
 mtproxy_max_connections=4096
 
 usage() {
-	echo "usage: sudo ./deploy/install.sh --hostname proxy.example.com [--email admin@example.com] [--site-dir DIR | --site-upstream URL] [--base-path SLUG|none] [--static-routes exact|legacy] [--secret 32-or-34-hex] [--mtproxy-workers 1] [--mtproxy-max-connections 4096]" >&2
+	echo "usage: sudo ./deploy/install.sh --hostname proxy.example.com [--email admin@example.com] [--cover-site DOMAIN|https://DOMAIN | --site-dir DIR | --site-upstream URL] [--base-path SLUG|none] [--static-routes exact|legacy] [--secret 32-or-34-hex] [--mtproxy-workers 1] [--mtproxy-max-connections 4096]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -24,6 +26,7 @@ while [[ $# -gt 0 ]]; do
 		--email) email="${2:-}"; shift 2 ;;
 		--site-dir) site_dir="${2:-}"; shift 2 ;;
 		--site-upstream) site_upstream="${2:-}"; shift 2 ;;
+		--cover-site) cover_site="${2:-}"; shift 2 ;;
 		--static-routes) static_routes="${2:-}"; shift 2 ;;
 		--mtproxy-workers) mtproxy_workers="${2:-}"; shift 2 ;;
 		--mtproxy-max-connections) mtproxy_max_connections="${2:-}"; shift 2 ;;
@@ -96,9 +99,17 @@ if [[ "$static_routes" != exact && "$static_routes" != legacy ]]; then
 	echo "--static-routes must be exact or legacy" >&2
 	exit 2
 fi
-if [[ -n "$site_dir" ]] && [[ -n "$site_upstream" ]]; then
-	echo "--site-dir and --site-upstream are mutually exclusive" >&2
+if (( (${#site_dir} > 0) + (${#site_upstream} > 0) + (${#cover_site} > 0) > 1 )); then
+	echo "--cover-site, --site-dir and --site-upstream are mutually exclusive" >&2
 	exit 2
+fi
+if [[ -n "$cover_site" ]]; then
+	cover_host="${cover_site#https://}"
+	[[ "$cover_host" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ && "$cover_host" == *.* ]] || {
+		echo "cover site must be a lowercase hostname or https:// followed by one" >&2
+		exit 2
+	}
+	site_upstream='http://127.0.0.1:3000'
 fi
 if [[ -n "$site_dir" ]]; then
 	if [[ ! -d "$site_dir" ]]; then
@@ -278,6 +289,22 @@ if [[ -e /etc/caddy/Caddyfile ]] && ! cmp -s /etc/caddy/Caddyfile "$repository/d
 	cp -a /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.before-tproxy.$(date +%Y%m%d%H%M%S)"
 fi
 install -m 0644 "$repository/deploy/Caddyfile" /etc/caddy/Caddyfile
+if [[ -n "$cover_host" ]]; then
+	for caddy_config in /etc/caddy/Caddyfile.tproxy /etc/caddy/Caddyfile; do
+		cat >>"$caddy_config" <<EOF
+
+:3000 {
+	bind 127.0.0.1
+	reverse_proxy https://$cover_host {
+		header_up Host $cover_host
+		transport http {
+			tls_server_name $cover_host
+		}
+	}
+}
+EOF
+	done
+fi
 if [[ -z "$email" ]]; then
 	sed -i '/^[[:space:]]*email[[:space:]]*{\$ACME_EMAIL}[[:space:]]*$/d' \
 		/etc/caddy/Caddyfile.tproxy /etc/caddy/Caddyfile
