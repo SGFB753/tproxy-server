@@ -76,7 +76,7 @@ done
 
 if [[ -z "$hostname" ]]; then
 	[[ -r /dev/tty ]] || die 'no terminal is available; pass the domain with --hostname'
-	read -r -p 'Public hostname: ' hostname </dev/tty
+	read -r -p 'Proxy domain (for example, proxy.example.com): ' hostname </dev/tty
 fi
 [[ "$hostname" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ && "$hostname" == *.* ]] \
 	|| die 'pass a lowercase DNS hostname with --hostname'
@@ -85,6 +85,12 @@ if [[ -n "$email" ]] && ! [[ "$email" =~ ^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za
 fi
 [[ "$base_path" == none || "$base_path" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$ ]] \
 	|| die 'invalid base path'
+
+if [[ -z "$secret" ]]; then
+	[[ -r /dev/tty ]] || die 'no terminal is available; pass an existing key with --secret or use an interactive terminal'
+	read -r -s -p 'Existing proxy key (32 hex, or 34 with dd; leave empty to generate): ' secret </dev/tty
+	printf '\n' >/dev/tty
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
