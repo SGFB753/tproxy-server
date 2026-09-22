@@ -104,9 +104,13 @@ if (( skip_dns_check == 0 )); then
 		public_ip=''
 	done
 	(( ${#resolved_ips[@]} > 0 )) || die "${hostname} has no IPv4 record"
-	[[ -n "$public_ip" ]] || die 'could not determine this server public IPv4; use --skip-dns-check only after checking DNS yourself'
-	printf '%s\n' "${resolved_ips[@]}" | grep -Fxq "$public_ip" \
-		|| die "${hostname} does not resolve to this server (${public_ip}); update DNS or use --skip-dns-check"
+	if [[ -z "$public_ip" ]]; then
+		printf 'WARNING: could not determine this server outbound IPv4; continuing with DNS address %s.\n' "${resolved_ips[*]}" >&2
+	elif ! printf '%s\n' "${resolved_ips[@]}" | grep -Fxq "$public_ip"; then
+		printf 'WARNING: %s resolves to %s, while this server uses %s for outbound traffic.\n' \
+			"$hostname" "${resolved_ips[*]}" "$public_ip" >&2
+		printf 'This is valid for servers behind NAT or with separate inbound/outbound addresses; continuing.\n' >&2
+	fi
 fi
 
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
