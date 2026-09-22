@@ -2,17 +2,12 @@
 
 ## Быстрая установка / Quick install
 
-На чистом сервере Debian/Ubuntu x86_64 выполни команду ниже. Замени
-`proxy.example.com` на свой домен, а `admin@example.com` — на свою почту.
-Домен должен указывать на сервер; TCP-порты 80 и 443 должны быть доступны
-для Caddy.
+На чистом сервере Debian/Ubuntu x86_64 выполни одну команду. Скрипт сам спросит
+домен и подтверждение установки. Email не требуется. Домен должен указывать
+на сервер; TCP-порты 80 и 443 должны быть доступны для Caddy.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SGFB753/tproxy-server/master/quick-install.sh \
-  | sudo bash -s -- \
-      --hostname proxy.example.com \
-      --email admin@example.com \
-      --yes
+curl -fsSL https://raw.githubusercontent.com/SGFB753/tproxy-server/master/quick-install.sh | sudo bash
 ```
 
 Установщик настроит Caddy, сертификат, WEB Proxy и официальный MTProxy,
@@ -26,8 +21,9 @@ sudo tproxy-show-link
 sudo tproxy-health-check
 ```
 
-For a fresh Debian/Ubuntu x86_64 server, replace the hostname and email above.
-Point DNS to the server and make TCP 80/443 available to Caddy.
+For a fresh Debian/Ubuntu x86_64 server, run the command above and enter the
+hostname when prompted. An email address is optional. Point DNS to the server
+and make TCP 80/443 available to Caddy.
 See [additional installation options](#quick-install-on-debian-or-ubuntu) below.
 
 ## About
@@ -207,8 +203,7 @@ sudo ./quick-install.sh
 Or run it directly on a fresh server:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SGFB753/tproxy-server/master/quick-install.sh \
-  | sudo bash -s -- --hostname proxy.example.com --email admin@example.com --yes
+curl -fsSL https://raw.githubusercontent.com/SGFB753/tproxy-server/master/quick-install.sh | sudo bash
 ```
 
 For unattended installation:
@@ -216,7 +211,6 @@ For unattended installation:
 ```bash
 sudo ./quick-install.sh \
   --hostname proxy.example.com \
-  --email admin@example.com \
   --yes
 ```
 
@@ -248,14 +242,13 @@ rsync -az --delete --exclude .git \
   tproxy-server/ YOUR_SSH_USER@YOUR_SERVER_PUBLIC_IP:/tmp/tproxy-server/
 ```
 
-Then connect and run the installer, substituting the hostname and contact email:
+Then connect and run the installer, substituting the hostname:
 
 ```bash
 ssh YOUR_SSH_USER@YOUR_SERVER_PUBLIC_IP
 cd /tmp/tproxy-server
 sudo ./deploy/install.sh \
   --hostname proxy.example.com \
-  --email you@example.com \
   --site-dir ../my-site
 ```
 
@@ -264,7 +257,6 @@ For a local web application that is already running, use:
 ```bash
 sudo ./deploy/install.sh \
   --hostname proxy.example.com \
-  --email you@example.com \
   --site-upstream http://127.0.0.1:3000
 ```
 

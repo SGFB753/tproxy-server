@@ -13,7 +13,7 @@ mtproxy_workers=1
 mtproxy_max_connections=4096
 
 usage() {
-	echo "usage: sudo ./deploy/install.sh --hostname proxy.example.com --email admin@example.com [--site-dir DIR | --site-upstream URL] [--base-path SLUG|none] [--static-routes exact|legacy] [--secret 32-or-34-hex] [--mtproxy-workers 1] [--mtproxy-max-connections 4096]" >&2
+	echo "usage: sudo ./deploy/install.sh --hostname proxy.example.com [--email admin@example.com] [--site-dir DIR | --site-upstream URL] [--base-path SLUG|none] [--static-routes exact|legacy] [--secret 32-or-34-hex] [--mtproxy-workers 1] [--mtproxy-max-connections 4096]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -78,8 +78,8 @@ if [[ ! "$secret" =~ ^([0-9a-f]{32}|dd[0-9a-f]{32})$ ]]; then
 	echo "secret must be 32 lowercase hex characters, optionally prefixed with dd" >&2
 	exit 2
 fi
-if [[ ! "$email" =~ ^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
-	echo "a valid ACME contact email is required" >&2
+if [[ -n "$email" ]] && ! [[ "$email" =~ ^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+	echo "invalid ACME contact email" >&2
 	exit 2
 fi
 if [[ ! "$mtproxy_workers" =~ ^[1-9][0-9]*$ ]] || ((mtproxy_workers > 256)); then
@@ -278,17 +278,23 @@ if [[ -e /etc/caddy/Caddyfile ]] && ! cmp -s /etc/caddy/Caddyfile "$repository/d
 	cp -a /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.before-tproxy.$(date +%Y%m%d%H%M%S)"
 fi
 install -m 0644 "$repository/deploy/Caddyfile" /etc/caddy/Caddyfile
+if [[ -z "$email" ]]; then
+	sed -i '/^[[:space:]]*email[[:space:]]*{\$ACME_EMAIL}[[:space:]]*$/d' \
+		/etc/caddy/Caddyfile.tproxy /etc/caddy/Caddyfile
+fi
 if [[ -e /etc/systemd/system/caddy.service ]] && ! cmp -s /etc/systemd/system/caddy.service "$repository/deploy/caddy.service"; then
 	cp -a /etc/systemd/system/caddy.service "/etc/systemd/system/caddy.service.before-tproxy.$(date +%Y%m%d%H%M%S)"
 fi
 install -m 0644 "$repository/deploy/caddy.service" /etc/systemd/system/caddy.service
 install -d -m 0755 /etc/systemd/system/caddy.service.d
-cat > /etc/systemd/system/caddy.service.d/tproxy.conf <<EOF
-[Service]
-Environment=TPROXY_HOSTNAME=$hostname
-Environment=TPROXY_SITE_ROOT=/srv/tproxy-site
-Environment=ACME_EMAIL=$email
-EOF
+{
+	echo '[Service]'
+	printf 'Environment=TPROXY_HOSTNAME=%s\n' "$hostname"
+	echo 'Environment=TPROXY_SITE_ROOT=/srv/tproxy-site'
+	if [[ -n "$email" ]]; then
+		printf 'Environment=ACME_EMAIL=%s\n' "$email"
+	fi
+} > /etc/systemd/system/caddy.service.d/tproxy.conf
 
 install -m 0644 "$repository/deploy/tproxy-server.service" /etc/systemd/system/tproxy-server.service
 install -m 0644 "$repository/deploy/mtproxy.service" /etc/systemd/system/mtproxy.service

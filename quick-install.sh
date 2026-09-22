@@ -19,12 +19,12 @@ usage() {
 Quick installer for Telegram WEB Proxy
 
 Usage:
-  sudo ./quick-install.sh [options]
-  curl -fsSL RAW_SCRIPT_URL | sudo bash -s -- --hostname proxy.example.com --email admin@example.com --yes
+  sudo ./quick-install.sh [DOMAIN] [options]
+  curl -fsSL RAW_SCRIPT_URL | sudo bash
 
 Options:
   --hostname DOMAIN          Public lowercase DNS hostname
-  --email EMAIL              ACME contact email
+  --email EMAIL              Optional ACME contact email
   --secret HEX               16-byte MTProxy secret (generated when omitted)
   --site-dir DIR             Existing cover site containing index.html
   --base-path SLUG|none      Relay base path (default: none for mobile compatibility)
@@ -57,7 +57,12 @@ while [[ $# -gt 0 ]]; do
 		--skip-dns-check) skip_dns_check=1; shift ;;
 		--yes) assume_yes=1; shift ;;
 		-h|--help) usage; exit 0 ;;
-		*) usage >&2; die "unknown option: $1" ;;
+		--*) usage >&2; die "unknown option: $1" ;;
+		*)
+			[[ -z "$hostname" ]] || die 'only one positional hostname is accepted'
+			hostname=$1
+			shift
+			;;
 	esac
 done
 
@@ -69,16 +74,15 @@ done
 [[ "${ID:-}" == debian || "${ID:-}" == ubuntu || "${ID_LIKE:-}" == *debian* ]] \
 	|| die 'this quick installer supports Debian and Ubuntu'
 
-if [[ -z "$hostname" && -t 0 ]]; then
-	read -r -p 'Public hostname: ' hostname
-fi
-if [[ -z "$email" && -t 0 ]]; then
-	read -r -p 'ACME email: ' email
+if [[ -z "$hostname" ]]; then
+	[[ -r /dev/tty ]] || die 'no terminal is available; pass the domain with --hostname'
+	read -r -p 'Public hostname: ' hostname </dev/tty
 fi
 [[ "$hostname" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ && "$hostname" == *.* ]] \
 	|| die 'pass a lowercase DNS hostname with --hostname'
-[[ "$email" =~ ^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] \
-	|| die 'pass a valid contact address with --email'
+if [[ -n "$email" ]] && ! [[ "$email" =~ ^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+	die 'invalid contact address passed with --email'
+fi
 [[ "$base_path" == none || "$base_path" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$ ]] \
 	|| die 'invalid base path'
 
@@ -137,7 +141,8 @@ printf 'Cover site:    %s\n' "$site_dir"
 printf 'Base path:     %s\n' "$base_path"
 printf 'Source:        %s\n\n' "$repository"
 if (( assume_yes == 0 )); then
-	read -r -p 'Install Telegram WEB Proxy now? [y/N] ' confirmation
+	[[ -r /dev/tty ]] || die 'no terminal is available; pass --yes for unattended installation'
+	read -r -p 'Install Telegram WEB Proxy now? [y/N] ' confirmation </dev/tty
 	[[ "$confirmation" == y || "$confirmation" == Y ]] || die 'cancelled'
 fi
 
@@ -146,13 +151,17 @@ if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: 
 	ufw allow 443/tcp
 fi
 
-printf '%s\n' "$secret" | "$repository/deploy/install.sh" \
-	--hostname "$hostname" \
-	--email "$email" \
-	--site-dir "$site_dir" \
-	--base-path "$base_path" \
-	--mtproxy-workers "$workers" \
+installer_arguments=(
+	--hostname "$hostname"
+	--site-dir "$site_dir"
+	--base-path "$base_path"
+	--mtproxy-workers "$workers"
 	--mtproxy-max-connections "$max_connections"
+)
+if [[ -n "$email" ]]; then
+	installer_arguments+=(--email "$email")
+fi
+printf '%s\n' "$secret" | "$repository/deploy/install.sh" "${installer_arguments[@]}"
 
 printf '\nInstallation complete.\n'
 /usr/local/sbin/tproxy-show-link
