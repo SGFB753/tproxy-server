@@ -96,7 +96,7 @@ if [[ -z "$secret" ]]; then
 fi
 if [[ -z "$cover_site" && -z "$site_dir" ]]; then
 	[[ -r /dev/tty ]] || die 'no terminal is available; pass the masking site with --cover-site'
-	read -r -p 'Masking site (for example, segefebe.ru): ' cover_site </dev/tty
+	read -r -p 'Masking site (for example, example.com): ' cover_site </dev/tty
 fi
 
 export DEBIAN_FRONTEND=noninteractive
