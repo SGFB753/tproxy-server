@@ -1,5 +1,37 @@
 # tproxy-server
 
+## Быстрая установка / Quick install
+
+На чистом сервере Debian/Ubuntu x86_64 выполни команду ниже. Замени
+`proxy.example.com` на свой домен, а `admin@example.com` — на свою почту.
+Домен должен указывать на сервер; TCP-порты 80 и 443 должны быть доступны
+для Caddy.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SGFB753/tproxy-server/master/quick-install.sh \
+  | sudo bash -s -- \
+      --hostname proxy.example.com \
+      --email admin@example.com \
+      --yes
+```
+
+Установщик настроит Caddy, сертификат, WEB Proxy и официальный MTProxy,
+создаст случайный секрет и выведет ссылки подключения. По умолчанию используется
+режим без пути (`--base-path none`).
+
+Повторно показать ссылки или проверить состояние:
+
+```bash
+sudo tproxy-show-link
+sudo tproxy-health-check
+```
+
+For a fresh Debian/Ubuntu x86_64 server, replace the hostname and email above.
+Point DNS to the server and make TCP 80/443 available to Caddy.
+See [additional installation options](#quick-install-on-debian-or-ubuntu) below.
+
+## About
+
 `tproxy-server` is the hosted half of a proof-of-concept WEB proxy type for
 Telegram. A Telegram app keeps its normal MTProxy framing and encryption, but sends
 all of its proxy TCP connections through one app-owned WebView transport. The
