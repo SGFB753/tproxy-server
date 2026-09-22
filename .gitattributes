@@ -1,0 +1,6 @@
+*.sh text eol=lf
+README.md text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
+*.nft text eol=lf
+Caddyfile text eol=lf

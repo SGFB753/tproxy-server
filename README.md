@@ -160,6 +160,43 @@ Do not allow TCP 2398, 8080, 8081, or 8888. The installer adds a local nftables 
 that drops external traffic to 2398 and 8888, but the provider firewall is the
 second required boundary.
 
+## Quick install on Debian or Ubuntu
+
+The interactive wrapper performs the DNS preflight, generates a random secret,
+creates a small cover site when none is supplied, opens 80/443 in an active UFW
+configuration, and then delegates to the audited installer below:
+
+```bash
+git clone https://github.com/SGFB753/tproxy-server.git
+cd tproxy-server
+sudo ./quick-install.sh
+```
+
+Or run it directly on a fresh server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SGFB753/tproxy-server/master/quick-install.sh \
+  | sudo bash -s -- --hostname proxy.example.com --email admin@example.com --yes
+```
+
+For unattended installation:
+
+```bash
+sudo ./quick-install.sh \
+  --hostname proxy.example.com \
+  --email admin@example.com \
+  --yes
+```
+
+The quick installer defaults to `--base-path none` because root-mode links work
+across the Desktop and experimental mobile clients. Use `--base-path SLUG` only
+when every intended client supports base-path links. After installation:
+
+```bash
+sudo tproxy-show-link
+sudo tproxy-health-check
+```
+
 If the host itself runs UFW or another firewall, allow 80/443 there as well. Preserve
 your working SSH rule before changing anything remotely:
 

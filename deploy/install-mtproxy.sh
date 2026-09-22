@@ -48,6 +48,12 @@ if [[ ! -x "$source_directory/objs/bin/mtproto-proxy" ]] ||
 	rm -rf "$temporary"
 fi
 
+# install.sh uses umask 077 for secrets. Build systems create directories using
+# that inherited mask, which can leave the final binary unreachable by the
+# unprivileged systemd user even though the binary itself has execute bits.
+chmod 0755 "$source_directory" "$source_directory/objs" \
+	"$source_directory/objs/bin" "$source_directory/objs/bin/mtproto-proxy"
+
 install -d -o root -g mtproxy -m 0750 /etc/mtproxy
 secret_temp="$(mktemp /etc/mtproxy/proxy-secret.XXXXXX)"
 config_temp="$(mktemp /etc/mtproxy/proxy-multi.conf.XXXXXX)"

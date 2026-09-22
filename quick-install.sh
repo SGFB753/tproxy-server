@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+repository_url="${TPROXY_REPOSITORY_URL:-https://github.com/SGFB753/tproxy-server.git}"
+install_directory="${TPROXY_SOURCE_DIR:-/opt/tproxy-server}"
+hostname=''
+email=''
+secret=''
+site_dir=''
+base_path='none'
+workers=1
+max_connections=4096
+assume_yes=0
+skip_dns_check=0
+
+usage() {
+	cat <<'EOF'
+Quick installer for Telegram WEB Proxy
+
+Usage:
+  sudo ./quick-install.sh [options]
+  curl -fsSL RAW_SCRIPT_URL | sudo bash -s -- --hostname proxy.example.com --email admin@example.com --yes
+
+Options:
+  --hostname DOMAIN          Public lowercase DNS hostname
+  --email EMAIL              ACME contact email
+  --secret HEX               16-byte MTProxy secret (generated when omitted)
+  --site-dir DIR             Existing cover site containing index.html
+  --base-path SLUG|none      Relay base path (default: none for mobile compatibility)
+  --workers N                Official MTProxy workers (default: 1)
+  --max-connections N        Connections per worker (default: 4096)
+  --repository URL           Git repository used by curl/pipe installs
+  --install-directory DIR    Source checkout (default: /opt/tproxy-server)
+  --skip-dns-check           Continue when DNS does not match the public IPv4
+  --yes                      Skip the final confirmation
+  -h, --help                 Show this help
+EOF
+}
+
+die() {
+	echo "quick-install: $*" >&2
+	exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--hostname) hostname="${2:-}"; shift 2 ;;
+		--email) email="${2:-}"; shift 2 ;;
+		--secret) secret="${2:-}"; shift 2 ;;
+		--site-dir) site_dir="${2:-}"; shift 2 ;;
+		--base-path) base_path="${2:-}"; shift 2 ;;
+		--workers) workers="${2:-}"; shift 2 ;;
+		--max-connections) max_connections="${2:-}"; shift 2 ;;
+		--repository) repository_url="${2:-}"; shift 2 ;;
+		--install-directory) install_directory="${2:-}"; shift 2 ;;
+		--skip-dns-check) skip_dns_check=1; shift ;;
+		--yes) assume_yes=1; shift ;;
+		-h|--help) usage; exit 0 ;;
+		*) usage >&2; die "unknown option: $1" ;;
+	esac
+done
+
+[[ $EUID -eq 0 ]] || die 'run as root'
+[[ "$(uname -m)" == 'x86_64' ]] || die 'only x86_64 servers are supported by the official MTProxy backend'
+[[ -r /etc/os-release ]] || die '/etc/os-release was not found'
+# shellcheck source=/dev/null
+. /etc/os-release
+[[ "${ID:-}" == debian || "${ID:-}" == ubuntu || "${ID_LIKE:-}" == *debian* ]] \
+	|| die 'this quick installer supports Debian and Ubuntu'
+
+if [[ -z "$hostname" && -t 0 ]]; then
+	read -r -p 'Public hostname: ' hostname
+fi
+if [[ -z "$email" && -t 0 ]]; then
+	read -r -p 'ACME email: ' email
+fi
+[[ "$hostname" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ && "$hostname" == *.* ]] \
+	|| die 'pass a lowercase DNS hostname with --hostname'
+[[ "$email" =~ ^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] \
+	|| die 'pass a valid contact address with --email'
+[[ "$base_path" == none || "$base_path" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$ ]] \
+	|| die 'invalid base path'
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl git openssl
+
+if [[ -z "$secret" ]]; then
+	secret="$(openssl rand -hex 16)"
+fi
+[[ "$secret" =~ ^([0-9a-f]{32}|dd[0-9a-f]{32})$ ]] || die 'secret must be 32 lowercase hex characters, optionally prefixed with dd'
+
+if (( skip_dns_check == 0 )); then
+	mapfile -t resolved_ips < <(getent ahostsv4 "$hostname" 2>/dev/null | awk '{print $1}' | sort -u)
+	public_ip=''
+	for probe in https://api.ipify.org https://ifconfig.co/ip https://icanhazip.com; do
+		public_ip="$(curl --fail --silent --show-error --location --ipv4 --max-time 15 "$probe" 2>/dev/null | tr -d '[:space:]')" || true
+		[[ "$public_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && break
+		public_ip=''
+	done
+	(( ${#resolved_ips[@]} > 0 )) || die "${hostname} has no IPv4 record"
+	[[ -n "$public_ip" ]] || die 'could not determine this server public IPv4; use --skip-dns-check only after checking DNS yourself'
+	printf '%s\n' "${resolved_ips[@]}" | grep -Fxq "$public_ip" \
+		|| die "${hostname} does not resolve to this server (${public_ip}); update DNS or use --skip-dns-check"
+fi
+
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+if [[ -n "$script_directory" && -f "$script_directory/deploy/install.sh" ]]; then
+	repository="$script_directory"
+else
+	if [[ -d "$install_directory/.git" ]]; then
+		[[ -z "$(git -C "$install_directory" status --porcelain)" ]] \
+			|| die "source checkout has local changes: ${install_directory}"
+		git -C "$install_directory" fetch --prune origin
+		remote_head="$(git -C "$install_directory" symbolic-ref --quiet --short refs/remotes/origin/HEAD)"
+		[[ -n "$remote_head" ]] || die 'could not determine the repository default branch'
+		git -C "$install_directory" merge --ff-only "$remote_head"
+	else
+		[[ ! -e "$install_directory" ]] || die "install directory exists and is not a Git checkout: ${install_directory}"
+		git clone --depth=1 "$repository_url" "$install_directory"
+	fi
+	repository="$install_directory"
+fi
+
+if [[ -z "$site_dir" ]]; then
+	site_dir='/srv/tproxy-quick-site'
+	install -d -m 0755 "$site_dir"
+	if [[ ! -f "$site_dir/index.html" ]]; then
+		install -m 0644 "$repository/deploy/quick-site.html" "$site_dir/index.html"
+	fi
+fi
+[[ -f "$site_dir/index.html" ]] || die "cover site has no index.html: ${site_dir}"
+
+printf '\nHost:          %s\n' "$hostname"
+printf 'Cover site:    %s\n' "$site_dir"
+printf 'Base path:     %s\n' "$base_path"
+printf 'Source:        %s\n\n' "$repository"
+if (( assume_yes == 0 )); then
+	read -r -p 'Install Telegram WEB Proxy now? [y/N] ' confirmation
+	[[ "$confirmation" == y || "$confirmation" == Y ]] || die 'cancelled'
+fi
+
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+	ufw allow 80/tcp
+	ufw allow 443/tcp
+fi
+
+printf '%s\n' "$secret" | "$repository/deploy/install.sh" \
+	--hostname "$hostname" \
+	--email "$email" \
+	--site-dir "$site_dir" \
+	--base-path "$base_path" \
+	--mtproxy-workers "$workers" \
+	--mtproxy-max-connections "$max_connections"
+
+printf '\nInstallation complete.\n'
+/usr/local/sbin/tproxy-show-link
+printf '\nRun this any time for diagnostics:\n  sudo tproxy-health-check\n'

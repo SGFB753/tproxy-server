@@ -178,7 +178,7 @@ if [[ -z "$go_binary" ]]; then
 	go_binary="/opt/go${go_version}/bin/go"
 fi
 
-(cd "$repository" && "$go_binary" test ./...)
+(umask 022; cd "$repository" && "$go_binary" test ./...)
 (cd "$repository" && "$go_binary" build -trimpath -ldflags='-s -w' -o /usr/local/bin/tproxy-server ./cmd/tproxy-server)
 chown root:root /usr/local/bin/tproxy-server
 chmod 0755 /usr/local/bin/tproxy-server
@@ -297,6 +297,8 @@ install -m 0644 "$repository/deploy/refresh-mtproxy-config.service" /etc/systemd
 install -m 0644 "$repository/deploy/refresh-mtproxy-config.timer" /etc/systemd/system/refresh-mtproxy-config.timer
 install -m 0644 "$repository/deploy/firewall.nft" /etc/tproxy-server/firewall.nft
 install -m 0755 "$repository/deploy/refresh-mtproxy-config.sh" /usr/local/sbin/refresh-mtproxy-config
+install -m 0755 "$repository/deploy/show-link.sh" /usr/local/sbin/tproxy-show-link
+install -m 0755 "$repository/deploy/health-check.sh" /usr/local/sbin/tproxy-health-check
 
 /usr/local/bin/tproxy-server -config /etc/tproxy-server/config.json \
 	-profiles-file /etc/tproxy-server/profiles.json -check
