@@ -100,7 +100,19 @@ if [[ -z "$cover_site" && -z "$site_dir" ]]; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
+if ! apt-get update; then
+	# An old, malformed Ookla source was installed by some speedtest packages.
+	# Disable only this exact invalid entry; leave all other repositories alone.
+	bad_source='/etc/apt/sources.list.d/speedtest.list'
+	if [[ -f "$bad_source" ]] && [[ "$(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$bad_source")" == 'deb https://packagecloud.io jammy main' ]]; then
+		[[ ! -e "${bad_source}.disabled-by-tproxy" ]] || die 'APT source backup already exists; fix repositories manually'
+		mv -- "$bad_source" "${bad_source}.disabled-by-tproxy"
+		printf 'Disabled invalid APT source %s (backup: %s).\n' "$bad_source" "${bad_source}.disabled-by-tproxy" >&2
+		apt-get update
+	else
+		die 'APT update failed; fix the repository error above and rerun the installer'
+	fi
+fi
 apt-get install -y --no-install-recommends ca-certificates curl git openssl
 
 if [[ -z "$secret" ]]; then
@@ -151,6 +163,15 @@ if [[ -z "$site_dir" && -z "$cover_site" ]]; then
 		install -m 0644 "$repository/deploy/quick-site.html" "$site_dir/index.html"
 	fi
 fi
+
+for required_port in 80 443; do
+	if ss -lntH "sport = :${required_port}" | grep -q .; then
+		listener="$(ss -lntpH "sport = :${required_port}" || true)"
+		if [[ "$listener" != *'"caddy"'* ]]; then
+			die "TCP port ${required_port} is already occupied: ${listener}. Stop the conflicting service and rerun."
+		fi
+	fi
+done
 if [[ -n "$site_dir" ]]; then
 	[[ -f "$site_dir/index.html" ]] || die "cover site has no index.html: ${site_dir}"
 fi
