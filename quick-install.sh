@@ -140,7 +140,10 @@ if (( skip_dns_check == 0 )); then
 	fi
 fi
 
-script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+script_directory=''
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+	script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
+fi
 if [[ -n "$script_directory" && -f "$script_directory/deploy/install.sh" ]]; then
 	repository="$script_directory"
 else
