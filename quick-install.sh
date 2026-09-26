@@ -105,9 +105,11 @@ if ! apt-get update; then
 	# Disable only this exact invalid entry; leave all other repositories alone.
 	bad_source='/etc/apt/sources.list.d/speedtest.list'
 	if [[ -f "$bad_source" ]] && [[ "$(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$bad_source")" == 'deb https://packagecloud.io jammy main' ]]; then
-		[[ ! -e "${bad_source}.disabled-by-tproxy" ]] || die 'APT source backup already exists; fix repositories manually'
-		mv -- "$bad_source" "${bad_source}.disabled-by-tproxy"
-		printf 'Disabled invalid APT source %s (backup: %s).\n' "$bad_source" "${bad_source}.disabled-by-tproxy" >&2
+		install -d -m 0700 /root/apt-source-backups
+		backup_source='/root/apt-source-backups/speedtest.list.disabled-by-tproxy'
+		[[ ! -e "$backup_source" ]] || die 'APT source backup already exists; fix repositories manually'
+		mv -- "$bad_source" "$backup_source"
+		printf 'Disabled invalid APT source %s (backup: %s).\n' "$bad_source" "$backup_source" >&2
 		apt-get update
 	else
 		die 'APT update failed; fix the repository error above and rerun the installer'

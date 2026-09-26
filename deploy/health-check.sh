@@ -16,7 +16,7 @@ check() {
 }
 
 check_certificate() {
-	openssl s_client -connect "${hostname}:443" -servername "$hostname" </dev/null 2>/dev/null \
+	openssl s_client -connect 127.0.0.1:443 -servername "$hostname" </dev/null 2>/dev/null \
 		| openssl x509 -noout -checkhost "$hostname"
 }
 
@@ -30,7 +30,8 @@ for service_name in caddy tproxy-firewall mtproxy tproxy-server; do
 	check "${service_name} is active" systemctl is-active --quiet "$service_name"
 done
 check 'relay readiness endpoint' curl --fail --silent --max-time 5 http://127.0.0.1:8081/readyz
-check 'public HTTPS endpoint' curl --fail --silent --max-time 15 "https://${hostname}/"
+check 'HTTPS endpoint' curl --noproxy '*' --resolve "${hostname}:443:127.0.0.1" \
+	--fail --silent --max-time 15 "https://${hostname}/"
 check 'public certificate hostname' check_certificate
 
 disconnects="$(journalctl -u mtproxy --since=-5min --no-pager 2>/dev/null \
